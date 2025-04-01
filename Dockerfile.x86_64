@@ -1,0 +1,47 @@
+FROM evolvedbinary/rocksjava:centos7_x64-be
+
+RUN yum -y update && \
+    yum -y install epel-release centos-release-scl && \
+    yum -y install cmake3 && \
+    yum -y install \
+        python \
+        python-devel \
+        binutils-devel jemalloc jemalloc-devel m4 autoconf automake libtool make gcc gcc-c++ tar gzip bzip2 xz git curl ca-certificates openssl11 openssl11-devel openssl-devel \
+        which \
+        findutils \
+        && \
+    ln -sf /usr/bin/cmake3 /usr/local/bin/cmake && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+ARG OPENSSL11_VER=1.1.1w
+
+RUN yum -y install perl-core wget make gcc gcc-c++ && \
+    cd /tmp && \
+    wget -q https://www.openssl.org/source/openssl-${OPENSSL11_VER}.tar.gz && \
+    tar xf openssl-${OPENSSL11_VER}.tar.gz && \
+    cd openssl-${OPENSSL11_VER} && \
+    ./Configure linux-x86_64 no-shared --prefix=/opt/openssl11 --openssldir=/opt/openssl11/ssl && \
+    make -j"$(nproc)" && \
+    make install_sw && \
+    rm -rf /tmp/openssl-${OPENSSL11_VER}*
+
+RUN yum -y install centos-release-scl && \
+    yum -y install devtoolset-11-gcc devtoolset-11-gcc-c++ && \
+    yum clean all && rm -rf /var/cache/yum
+
+ARG LIBURING_REF=liburing-2.6
+
+RUN yum -y install git make && \
+    cd /tmp && \
+    git clone https://github.com/axboe/liburing.git && \
+    cd liburing && \
+    git checkout "${LIBURING_REF}" && \
+    scl enable devtoolset-11 -- ./configure --prefix=/usr && \
+    scl enable devtoolset-11 -- make -C src -j"$(nproc)" && \
+    make -C src install && \
+    ldconfig && \
+    test -f /usr/include/liburing.h && \
+    (test -f /usr/lib64/liburing.so || test -f /usr/lib/liburing.so) && \
+    rm -rf /tmp/liburing
+

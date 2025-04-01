@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.mirgee</groupId>
+  <artifactId>rocksdbjni</artifactId>
+  <version>10.2.1-c0</version>
+  <packaging>jar</packaging>
+
+  <name>RocksDB JNI</name>
+  <description>
+    RocksDB JNI jar with native libraries. Also publishes a linux64 classifier jar that includes
+    multiple linux64 architectures (e.g. x86_64 and aarch64) like the upstream release structure.
+  </description>
+  <url>https://rocksdb.org</url>
+
+  <licenses>
+    <license>
+      <name>Apache License 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.html</url>
+      <distribution>repo</distribution>
+    </license>
+    <license>
+      <name>GNU General Public License, version 2</name>
+      <url>http://www.gnu.org/licenses/gpl-2.0.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:https://github.com/facebook/rocksdb.git</connection>
+    <developerConnection>scm:git:https://github.com/facebook/rocksdb.git</developerConnection>
+    <url>scm:git:https://github.com/facebook/rocksdb.git</url>
+  </scm>
+
+    <organization>
+        <name>Facebook</name>
+        <url>https://www.facebook.com</url>
+    </organization>
+
+    <developers>
+        <developer>
+            <name>Facebook</name>
+            <email>help@facebook.com</email>
+            <timezone>America/New_York</timezone>
+            <roles>
+                <role>architect</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <mailingLists>
+        <mailingList>
+            <name>rocksdb - Google Groups</name>
+            <subscribe>rocksdb-subscribe@googlegroups.com</subscribe>
+            <unsubscribe>rocksdb-unsubscribe@googlegroups.com</unsubscribe>
+            <post>rocksdb@googlegroups.com</post>
+            <archive>https://groups.google.com/forum/#!forum/rocksdb</archive>
+        </mailingList>
+    </mailingLists>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+
+    <!-- Central publishing plugin config -->
+    <central.serverId>central</central.serverId>
+  </properties>
+
+  <build>
+    <plugins>
+
+      <!-- Compile Java (if any) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+        <configuration>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
+          <encoding>${project.build.sourceEncoding}</encoding>
+        </configuration>
+      </plugin>
+
+      <!-- Produce sources jar -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Produce javadoc jar -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Copy/Stage native libs so classifier jars can be built deterministically -->
+      <plugin>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+
+          <!-- OPTIONAL: If you want the MAIN jar to contain all the natives you build, copy them into classes output -->
+          <execution>
+            <id>copy-natives-into-main-jar</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+              <resources>
+                <resource>
+                  <!-- where your Makefile drops the built natives -->
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>librocksdbjni-*.so</include>
+                    <include>librocksdbjni-*.jnilib</include>
+                    <include>rocksdbjni*.dll</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- linux64 classifier staging: glibc Linux natives for multiple arches -->
+          <execution>
+            <id>stage-linux64-natives</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/staging/linux64</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <!-- This is the important one: it includes librocksdbjni-linux-aarch64.so and librocksdbjni-linux-x86_64.so -->
+                    <include>librocksdbjni-linux*.so</include>
+                  </includes>
+                  <excludes>
+                    <!-- keep musl out of the glibc classifier jar -->
+                    <exclude>librocksdbjni-linux-*-musl.so</exclude>
+                  </excludes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <!-- Build classifier jars (THIS is what you were missing).
+           Do NOT use build-helper to "attach" prebuilt jars. Build them here. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+
+          <!-- default jar (main artifact) is produced automatically; no extra execution needed -->
+
+          <execution>
+            <id>jar-linux64</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>linux64</classifier>
+              <!-- build the classifier jar from staged natives -->
+              <classesDirectory>${project.build.directory}/staging/linux64</classesDirectory>
+              <includes>
+                <include>**/*</include>
+              </includes>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <!-- Sign artifacts (required for Central) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Publish to Maven Central via Sonatype Central Portal -->
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.7.0</version>
+        <extensions>true</extensions>
+        <configuration>
+          <publishingServerId>${central.serverId}</publishingServerId>
+          <autoPublish>true</autoPublish>
+          <!-- remove if you don't want Maven to block waiting -->
+          <waitUntil>published</waitUntil>
+        </configuration>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.13.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>hamcrest</artifactId>
+      <version>2.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>cglib</groupId>
+      <artifactId>cglib</artifactId>
+      <version>3.3.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>2.9.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-all</artifactId>
+      <version>1.10.19</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+</project>
