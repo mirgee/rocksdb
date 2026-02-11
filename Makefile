@@ -99,6 +99,7 @@ dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; \
                   export COMPILE_WITH_UBSAN="$(COMPILE_WITH_UBSAN)"; \
                   export PORTABLE="$(PORTABLE)"; \
                   export ROCKSDB_NO_FBCODE="$(ROCKSDB_NO_FBCODE)"; \
+                  export ROCKSDB_USE_IO_URING="$(ROCKSDB_USE_IO_URING)"; \
                   export USE_CLANG="$(USE_CLANG)"; \
                   export LIB_MODE="$(LIB_MODE)"; \
 		  export ROCKSDB_CXX_STANDARD="$(ROCKSDB_CXX_STANDARD)"; \
@@ -468,19 +469,20 @@ ifeq ($(USE_FOLLY_LITE),1)
 $(error Please specify only one of USE_FOLLY and USE_FOLLY_LITE)
 endif
 ifneq ($(strip $(FOLLY_PATH)),)
-	BOOST_PATH = $(shell (ls -d $(FOLLY_PATH)/../boost*))
-	DBL_CONV_PATH = $(shell (ls -d $(FOLLY_PATH)/../double-conversion*))
-	GFLAGS_PATH = $(shell (ls -d $(FOLLY_PATH)/../gflags*))
-	GLOG_PATH = $(shell (ls -d $(FOLLY_PATH)/../glog*))
-	LIBEVENT_PATH = $(shell (ls -d $(FOLLY_PATH)/../libevent*))
-	XZ_PATH = $(shell (ls -d $(FOLLY_PATH)/../xz*))
-	LIBSODIUM_PATH = $(shell (ls -d $(FOLLY_PATH)/../libsodium*))
-	FMT_PATH = $(shell (ls -d $(FOLLY_PATH)/../fmt*))
-	LIBIBERTY_PATH = $(shell (ls -d $(FOLLY_PATH)/../libiberty*))
+	BOOST_PATH      := $(firstword $(wildcard $(FOLLY_PATH)/../boost-*))
+	DBL_CONV_PATH   := $(firstword $(wildcard $(FOLLY_PATH)/../double-conversion-*))
+	GFLAGS_PATH     := $(firstword $(wildcard $(FOLLY_PATH)/../gflags-*))
+	GLOG_PATH       := $(firstword $(wildcard $(FOLLY_PATH)/../glog-*))
+	LIBEVENT_PATH   := $(firstword $(wildcard $(FOLLY_PATH)/../libevent-*))
+	XZ_PATH         := $(firstword $(wildcard $(FOLLY_PATH)/../xz-*))
+	LIBSODIUM_PATH  := $(firstword $(wildcard $(FOLLY_PATH)/../libsodium-*))
+	FMT_PATH        := $(firstword $(wildcard $(FOLLY_PATH)/../fmt-*))
+	LIBIBERTY_PATH  := $(firstword $(wildcard $(FOLLY_PATH)/../libiberty*))
 
 	# For some reason, glog and fmt libraries are under either lib or lib64
-	GLOG_LIB_PATH = $(shell (ls -d $(GLOG_PATH)/lib*))
-	FMT_LIB_PATH = $(shell (ls -d $(FMT_PATH)/lib*))
+	GLOG_LIB_PATH := $(firstword $(wildcard $(GLOG_PATH)/lib64) $(wildcard $(GLOG_PATH)/lib))
+	FMT_LIB_PATH := $(firstword $(wildcard $(FMT_PATH)/lib64) $(wildcard $(FMT_PATH)/lib))
+	LIBIBERTY_LIB_PATH := $(firstword $(wildcard $(LIBIBERTY_PATH)/lib64) $(wildcard $(LIBIBERTY_PATH)/lib))
 
 	# AIX: pre-defined system headers are surrounded by an extern "C" block
 	ifeq ($(PLATFORM), OS_AIX)
@@ -491,13 +493,34 @@ ifneq ($(strip $(FOLLY_PATH)),)
 		PLATFORM_CXXFLAGS += -isystem $(BOOST_PATH)/include -isystem $(DBL_CONV_PATH)/include -isystem $(GLOG_PATH)/include -isystem $(LIBEVENT_PATH)/include -isystem $(XZ_PATH)/include -isystem $(LIBSODIUM_PATH)/include -isystem $(FOLLY_PATH)/include -isystem $(FMT_PATH)/include
 	endif
 
-	# Add -ldl at the end as gcc resolves a symbol in a library by searching only in libraries specified later
-	# in the command line
 	# Link all folly dependencies statically
-	PLATFORM_LDFLAGS += $(FOLLY_PATH)/lib/libfolly.a $(BOOST_PATH)/lib/libboost_context.a $(BOOST_PATH)/lib/libboost_filesystem.a $(BOOST_PATH)/lib/libboost_atomic.a $(BOOST_PATH)/lib/libboost_program_options.a $(BOOST_PATH)/lib/libboost_regex.a $(BOOST_PATH)/lib/libboost_system.a $(BOOST_PATH)/lib/libboost_thread.a $(DBL_CONV_PATH)/lib/libdouble-conversion.a $(FMT_LIB_PATH)/libfmt.a $(LIBIBERTY_PATH)/lib/libiberty.a $(GLOG_LIB_PATH)/libglog.a $(GFLAGS_PATH)/lib/libgflags.a $(LIBEVENT_PATH)/lib/libevent.a -ldl
+	FOLLY_LDFLAGS = \
+		$(FOLLY_PATH)/lib/libfolly.a \
+		$(BOOST_PATH)/lib/libboost_context.a \
+		$(BOOST_PATH)/lib/libboost_filesystem.a \
+		$(BOOST_PATH)/lib/libboost_atomic.a \
+		$(BOOST_PATH)/lib/libboost_program_options.a \
+		$(BOOST_PATH)/lib/libboost_regex.a \
+		$(BOOST_PATH)/lib/libboost_system.a \
+		$(BOOST_PATH)/lib/libboost_thread.a \
+		$(DBL_CONV_PATH)/lib/libdouble-conversion.a \
+		$(FMT_LIB_PATH)/libfmt.a \
+		$(LIBIBERTY_LIB_PATH)/libiberty.a \
+		$(GLOG_LIB_PATH)/libglog.a \
+		$(GFLAGS_PATH)/lib/libgflags.a \
+		$(LIBEVENT_PATH)/lib/libevent.a \
+		-ldl \
+		-pthread
+
+	PLATFORM_LDFLAGS += $(FOLLY_LDFLAGS)
+	JAVA_LDFLAGS += $(FOLLY_LDFLAGS)
+	JAVA_STATIC_LDFLAGS += $(FOLLY_LDFLAGS)
 endif
 	PLATFORM_CCFLAGS += -DUSE_FOLLY -DFOLLY_NO_CONFIG
 	PLATFORM_CXXFLAGS += -DUSE_FOLLY -DFOLLY_NO_CONFIG
+	# NOTE: Removed for arm64
+	# PLATFORM_CCFLAGS += -DUSE_FOLLY
+	# PLATFORM_CXXFLAGS += -DUSE_FOLLY
 endif
 
 ifeq ($(USE_FOLLY_LITE),1)
@@ -605,8 +628,8 @@ CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverl
 CXXFLAGS += -Wno-invalid-offsetof
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
-JAVA_LDFLAGS += $(PLATFORM_LDFLAGS)
-JAVA_STATIC_LDFLAGS += $(PLATFORM_LDFLAGS)
+# JAVA_LDFLAGS += $(PLATFORM_LDFLAGS)
+# JAVA_STATIC_LDFLAGS += $(PLATFORM_LDFLAGS)
 
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
 LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(ROCKSDB_PLUGIN_SOURCES))
@@ -2335,7 +2358,7 @@ endif
 rocksdbjavastatic_javalib:
 	cd java; $(MAKE) javalib
 	rm -f java/target/$(ROCKSDBJNILIB)
-	$(CXX) $(CXXFLAGS) -I./java/. $(JAVA_INCLUDE) -shared -fPIC \
+	$(CXX) $(CXXFLAGS) -I./java/. $(JAVA_INCLUDE) -shared -fPIC -Wl,-z,defs \
 	  -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_SOURCES) \
 	  $(LIB_OBJECTS) $(COVERAGEFLAGS) \
 	  $(JAVA_COMPRESSIONS) $(JAVA_STATIC_LDFLAGS)
@@ -2368,10 +2391,11 @@ rocksdbjavastaticrelease: rocksdbjava_javadocs_jar rocksdbjava_sources_jar
 	cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
 	openssl sha1 java/target/$(ROCKSDB_JAR_ALL) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR_ALL).sha1
 
-rocksdbjavastaticreleasedocker: rocksdbjavastaticdockerx86_64 rocksdbjava_sources_jar
+# rocksdbjavastaticreleasedocker: rocksdbjavastaticdockerx86_64 rocksdbjava_sources_jar
+rocksdbjavastaticreleasedocker: rocksdbjavastaticosx rocksdbjavastaticdockerx86 rocksdbjavastaticdockerx86_64 rocksdbjavastaticdockerx86musl rocksdbjavastaticdockerx86_64musl rocksdbjava_javadocs_jar rocksdbjava_sources_jar
 	cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR_ALL) HISTORY*.md
 	cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR_ALL) librocksdbjni-*.so
-	cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
+	# cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
 	openssl sha1 java/target/$(ROCKSDB_JAR_ALL) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR_ALL).sha1
 
 rocksdbjavastaticdockerx86:
@@ -2380,7 +2404,18 @@ rocksdbjavastaticdockerx86:
 
 rocksdbjavastaticdockerx86_64:
 	mkdir -p java/target
-	docker run --rm --name rocksdb_linux_x64-be --attach stdin --attach stdout --attach stderr --volume $(HOME)/.m2:/root/.m2:ro --volume `pwd`:/rocksdb-host:ro --volume /rocksdb-local-build --volume `pwd`/java/target:/rocksdb-java-target --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) evolvedbinary/rocksjava:centos6_x64-be /rocksdb-host/java/crossbuild/docker-build-linux.sh
+	docker run --rm --name rocksdb_linux_x64-be \
+		--platform linux/amd64 \
+	  --attach stdin --attach stdout --attach stderr \
+	  --volume $(HOME)/.m2:/root/.m2:ro \
+	  --volume `pwd`:/rocksdb-host:ro \
+	  --volume /rocksdb-local-build \
+	  --volume `pwd`/java/target:/rocksdb-java-target \
+	  --mount type=volume,src=rocksdb_getdeps_x86_64,dst=/getdeps-scratch \
+	  --env GETDEPS_SCRATCH_PATH=/getdeps-scratch \
+	  --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) \
+	  rocksjava-centos7-pydev \
+	  /rocksdb-host/java/crossbuild/docker-build-linux.sh
 
 rocksdbjavastaticdockerppc64le:
 	mkdir -p java/target
@@ -2388,7 +2423,17 @@ rocksdbjavastaticdockerppc64le:
 
 rocksdbjavastaticdockerarm64v8:
 	mkdir -p java/target
-	docker run --rm --name rocksdb_linux_arm64v8-be --attach stdin --attach stdout --attach stderr --volume $(HOME)/.m2:/root/.m2:ro --volume `pwd`:/rocksdb-host:ro --volume /rocksdb-local-build --volume `pwd`/java/target:/rocksdb-java-target --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) evolvedbinary/rocksjava:centos7_arm64v8-be /rocksdb-host/java/crossbuild/docker-build-linux.sh
+	docker run --rm --name rocksdb_linux_arm64v8-be \
+	  --attach stdin --attach stdout --attach stderr \
+	  --volume $(HOME)/.m2:/root/.m2:ro \
+	  --volume `pwd`:/rocksdb-host:ro \
+	  --volume /rocksdb-local-build \
+	  --volume `pwd`/java/target:/rocksdb-java-target \
+	  --mount type=volume,src=rocksdb_getdeps_arm64v8,dst=/getdeps-scratch \
+	  --env GETDEPS_SCRATCH_PATH=/getdeps-scratch \
+	  --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) \
+	  rocksjava-centos7-pydev-arm64 \
+	  /rocksdb-host/java/crossbuild/docker-build-linux.sh
 
 rocksdbjavastaticdockers390x:
 	mkdir -p java/target
@@ -2499,20 +2544,40 @@ checkout_folly:
 	@# NOTE: this hack is required for gcc in some cases
 	perl -pi -e 's/(__has_include.<experimental.memory_resource>.)/__cpp_rtti && $$1/' third-party/folly/folly/memory/MemoryResource.h
 	@# NOTE: boost source will be needed for any build including `USE_FOLLY_LITE` builds as those depend on boost headers
-	cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py fetch boost
+	cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py fetch boost --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp}
 
 CXX_M_FLAGS = $(filter -m%, $(CXXFLAGS))
 
+# Only propagate "target selection" flags to Folly (safe across platforms)
+ifeq ($(ARMCRC_SOURCE),1)
+  ARCH_CFLAGS   := $(filter -march=% -mcpu=% -mtune=%,$(CFLAGS))
+  ARCH_CXXFLAGS := $(filter -march=% -mcpu=% -mtune=%,$(CXXFLAGS))
+else
+  ARCH_CFLAGS   :=
+  ARCH_CXXFLAGS :=
+endif
+
+FOLLY_CFLAGS   := -fPIC $(ARCH_CFLAGS)
+FOLLY_CXXFLAGS := -fPIC -DHAVE_CXX11_ATOMIC $(ARCH_CXXFLAGS)
+
 build_folly:
-	FOLLY_INST_PATH=`cd third-party/folly; $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir`; \
+	FOLLY_INST_PATH=`cd third-party/folly; $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp}`; \
 	if [ "$$FOLLY_INST_PATH" ]; then \
-		rm -rf $${FOLLY_INST_PATH}/../../*; \
+		if [ "$${CLEAN_GETDEPS_SCRATCH:-0}" = "1" ]; then \
+			rm -rf $${FOLLY_INST_PATH}/../../*; \
+		fi; \
 	else \
 		echo "Please run checkout_folly first"; \
 		false; \
 	fi
 	cd third-party/folly && \
-		CFLAGS="-fPIC" CXXFLAGS=" $(CXX_M_FLAGS) -DHAVE_CXX11_ATOMIC -fPIC " $(PYTHON) build/fbcode_builder/getdeps.py build --extra-cmake-defines '{"BUILD_SHARED_LIBS": "OFF", "CMAKE_CXX_FLAGS": "-fPIC -DHAVE_CXX11_ATOMIC"}' --no-tests
+	CFLAGS="$(FOLLY_CFLAGS)" \
+	CXXFLAGS="$(CXX_M_FLAGS) $(FOLLY_CXXFLAGS)" \
+	$(PYTHON) build/fbcode_builder/getdeps.py build \
+		--scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp} \
+		--allow-system-packages \
+		--no-tests \
+		--extra-cmake-defines "{\"BUILD_SHARED_LIBS\":\"OFF\",\"CMAKE_C_FLAGS\":\"$(FOLLY_CFLAGS)\",\"CMAKE_CXX_FLAGS\":\"$(CXX_M_FLAGS) $(FOLLY_CXXFLAGS)\",\"CMAKE_POSITION_INDEPENDENT_CODE\":\"ON\",\"OPENSSL_INCLUDE_DIR\":\"/opt/openssl11/include\",\"OPENSSL_CRYPTO_LIBRARY\":\"/opt/openssl11/lib/libcrypto.a\",\"OPENSSL_SSL_LIBRARY\":\"/opt/openssl11/lib/libssl.a\",\"OPENSSL_ROOT_DIR\":\"/opt/openssl11\",\"OPENSSL_USE_STATIC_LIBS\":\"TRUE\",\"FOLLY_USE_JEMALLOC\":\"OFF\",\"FOLLY_HAVE_JEMALLOC\":\"OFF\",\"JEMALLOC_FOUND\":\"OFF\",\"FOLLY_USE_SYMBOLIZER\":\"OFF\",\"FOLLY_HAVE_LIBUNWIND\":\"OFF\",\"FOLLY_HAVE_DWARF\":\"OFF\",\"FOLLY_HAVE_ELF\":\"OFF\",\"CMAKE_DISABLE_FIND_PACKAGE_LibUnwind\":\"ON\",\"WITH_UNWIND\":\"OFF\",\"WITH_SYMBOLIZE\":\"OFF\"}"
 
 # ---------------------------------------------------------------------------
 #   Build size testing
