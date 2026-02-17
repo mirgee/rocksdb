@@ -1,8 +1,3 @@
-# This file contains the vast majority of folly-related build configuration
-# for the checkout_folly and build_folly targets, so that this file can be
-# hashed for purposes of caching folly builds and not hitting that cache when
-# something here changes.
-
 # This provides a Makefile simulation of a Meta-internal folly integration.
 # It is not validated for general use.
 #
@@ -22,18 +17,20 @@ ifeq ($(USE_FOLLY_LITE),1)
 $(error Please specify only one of USE_FOLLY and USE_FOLLY_LITE)
 endif
 ifneq ($(strip $(FOLLY_PATH)),)
-	BOOST_PATH = $(shell (ls -d $(FOLLY_PATH)/../boost*))
-	DBL_CONV_PATH = $(shell (ls -d $(FOLLY_PATH)/../double-conversion*))
-	GFLAGS_PATH = $(shell (ls -d $(FOLLY_PATH)/../gflags*))
-	GLOG_PATH = $(shell (ls -d $(FOLLY_PATH)/../glog*))
-	LIBEVENT_PATH = $(shell (ls -d $(FOLLY_PATH)/../libevent*))
-	XZ_PATH = $(shell (ls -d $(FOLLY_PATH)/../xz*))
-	LIBSODIUM_PATH = $(shell (ls -d $(FOLLY_PATH)/../libsodium*))
-	FMT_PATH = $(shell (ls -d $(FOLLY_PATH)/../fmt*))
+	BOOST_PATH      := $(firstword $(wildcard $(FOLLY_PATH)/../boost-*))
+	DBL_CONV_PATH   := $(firstword $(wildcard $(FOLLY_PATH)/../double-conversion-*))
+	GFLAGS_PATH     := $(firstword $(wildcard $(FOLLY_PATH)/../gflags-*))
+	GLOG_PATH       := $(firstword $(wildcard $(FOLLY_PATH)/../glog-*))
+	LIBEVENT_PATH   := $(firstword $(wildcard $(FOLLY_PATH)/../libevent-*))
+	XZ_PATH         := $(firstword $(wildcard $(FOLLY_PATH)/../xz-*))
+	LIBSODIUM_PATH  := $(firstword $(wildcard $(FOLLY_PATH)/../libsodium-*))
+	FMT_PATH        := $(firstword $(wildcard $(FOLLY_PATH)/../fmt-*))
+	LIBIBERTY_PATH  := $(firstword $(wildcard $(FOLLY_PATH)/../libiberty*))
 
 	# For some reason, glog and fmt libraries are under either lib or lib64
-	GLOG_LIB_PATH = $(shell (ls -d $(GLOG_PATH)/lib*))
-	FMT_LIB_PATH = $(shell (ls -d $(FMT_PATH)/lib*))
+	GLOG_LIB_PATH := $(firstword $(wildcard $(GLOG_PATH)/lib64) $(wildcard $(GLOG_PATH)/lib))
+	FMT_LIB_PATH := $(firstword $(wildcard $(FMT_PATH)/lib64) $(wildcard $(FMT_PATH)/lib))
+	LIBIBERTY_LIB_PATH := $(firstword $(wildcard $(LIBIBERTY_PATH)/lib64) $(wildcard $(LIBIBERTY_PATH)/lib))
 
 	# AIX: pre-defined system headers are surrounded by an extern "C" block
 	ifeq ($(PLATFORM), OS_AIX)
@@ -44,19 +41,34 @@ ifneq ($(strip $(FOLLY_PATH)),)
 		PLATFORM_CXXFLAGS += -isystem $(BOOST_PATH)/include -isystem $(DBL_CONV_PATH)/include -isystem $(GLOG_PATH)/include -isystem $(LIBEVENT_PATH)/include -isystem $(XZ_PATH)/include -isystem $(LIBSODIUM_PATH)/include -isystem $(FOLLY_PATH)/include -isystem $(FMT_PATH)/include
 	endif
 
-	# Add -ldl at the end as gcc resolves a symbol in a library by searching only in libraries specified later
-	# in the command line
+	# Link all folly dependencies statically
+	FOLLY_LDFLAGS = \
+		$(FOLLY_PATH)/lib/libfolly.a \
+		$(BOOST_PATH)/lib/libboost_context.a \
+		$(BOOST_PATH)/lib/libboost_filesystem.a \
+		$(BOOST_PATH)/lib/libboost_atomic.a \
+		$(BOOST_PATH)/lib/libboost_program_options.a \
+		$(BOOST_PATH)/lib/libboost_regex.a \
+		$(BOOST_PATH)/lib/libboost_system.a \
+		$(BOOST_PATH)/lib/libboost_thread.a \
+		$(DBL_CONV_PATH)/lib/libdouble-conversion.a \
+		$(FMT_LIB_PATH)/libfmt.a \
+		$(LIBIBERTY_LIB_PATH)/libiberty.a \
+		$(GLOG_LIB_PATH)/libglog.a \
+		$(GFLAGS_PATH)/lib/libgflags.a \
+		$(LIBEVENT_PATH)/lib/libevent.a \
+		-ldl \
+		-pthread
 
-	PLATFORM_LDFLAGS += $(FOLLY_PATH)/lib/libfolly.a $(BOOST_PATH)/lib/libboost_context.a $(BOOST_PATH)/lib/libboost_filesystem.a $(BOOST_PATH)/lib/libboost_atomic.a $(BOOST_PATH)/lib/libboost_program_options.a $(BOOST_PATH)/lib/libboost_regex.a $(BOOST_PATH)/lib/libboost_system.a $(BOOST_PATH)/lib/libboost_thread.a $(DBL_CONV_PATH)/lib/libdouble-conversion.a $(LIBEVENT_PATH)/lib/libevent-2.1.so $(LIBSODIUM_PATH)/lib/libsodium.a -ldl
-ifneq ($(DEBUG_LEVEL),0)
-	PLATFORM_LDFLAGS += $(FMT_LIB_PATH)/libfmtd.a $(GLOG_LIB_PATH)/libglogd.so $(GFLAGS_PATH)/lib/libgflags_debug.so.2.2
-else
-	PLATFORM_LDFLAGS += $(FMT_LIB_PATH)/libfmt.a $(GLOG_LIB_PATH)/libglog.so $(GFLAGS_PATH)/lib/libgflags.so.2.2
-endif
-	PLATFORM_LDFLAGS += -Wl,-rpath=$(LIBEVENT_PATH)/lib -Wl,-rpath=$(GLOG_LIB_PATH) -Wl,-rpath=$(GFLAGS_PATH)/lib
+	PLATFORM_LDFLAGS += $(FOLLY_LDFLAGS)
+	JAVA_LDFLAGS += $(FOLLY_LDFLAGS)
+	JAVA_STATIC_LDFLAGS += $(FOLLY_LDFLAGS)
 endif
 	PLATFORM_CCFLAGS += -DUSE_FOLLY -DFOLLY_NO_CONFIG
 	PLATFORM_CXXFLAGS += -DUSE_FOLLY -DFOLLY_NO_CONFIG
+	# NOTE: Removed for arm64
+	# PLATFORM_CCFLAGS += -DUSE_FOLLY
+	# PLATFORM_CXXFLAGS += -DUSE_FOLLY
 endif
 
 ifeq ($(USE_FOLLY_LITE),1)
@@ -73,17 +85,6 @@ ifneq ($(strip $(BOOST_SOURCE_PATH)),)
 		PLATFORM_CXXFLAGS += -isystem $(BOOST_INCLUDE)
 	endif
 endif  # BOOST_SOURCE_PATH
-ifneq ($(strip $(FMT_SOURCE_PATH)),)
-	FMT_INCLUDE = $(shell (ls -d $(FMT_SOURCE_PATH)/fmt*/include/))
-	# AIX: pre-defined system headers are surrounded by an extern "C" block
-	ifeq ($(PLATFORM), OS_AIX)
-		PLATFORM_CCFLAGS += -I$(FMT_INCLUDE)
-		PLATFORM_CXXFLAGS += -I$(FMT_INCLUDE)
-	else
-		PLATFORM_CCFLAGS += -isystem $(FMT_INCLUDE)
-		PLATFORM_CXXFLAGS += -isystem $(FMT_INCLUDE)
-	endif
-endif  # FMT_SOURCE_PATH
 	# AIX: pre-defined system headers are surrounded by an extern "C" block
 	ifeq ($(PLATFORM), OS_AIX)
 		PLATFORM_CCFLAGS += -I$(FOLLY_DIR)
@@ -120,7 +121,7 @@ checkout_folly:
 	@cd third-party/folly && \
 		DOWNLOAD_DIR=`$(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir | sed 's|/installed/.*|/downloads|'` && \
 		mkdir -p "$$DOWNLOAD_DIR" && \
-		CACHE_DIR="/tmp/rocksdb-getdeps-cache" && \
+		CACHE_DIR="$${GETDEPS_SCRATCH_PATH:-/tmp}/rocksdb-getdeps-cache" && \
 		mkdir -p "$$CACHE_DIR" && \
 		echo "Restoring cached downloads..." && \
 		if ls "$$CACHE_DIR"/*.tar.gz "$$CACHE_DIR"/*.tar.xz "$$CACHE_DIR"/*.zip >/dev/null 2>&1; then \
@@ -129,11 +130,14 @@ checkout_folly:
 		echo "Handling known unreliable downloads with fallback mirrors..." && \
 		$(PYTHON) ../../build_tools/getdeps_fallback_mirror.py "$$DOWNLOAD_DIR" "$$CACHE_DIR" build/fbcode_builder/manifests
 	@# NOTE: boost and fmt source will be needed for any build including `USE_FOLLY_LITE` builds as those depend on those headers
-	cd third-party/folly && GETDEPS_USE_WGET=1 $(PYTHON) build/fbcode_builder/getdeps.py fetch boost && GETDEPS_USE_WGET=1 $(PYTHON) build/fbcode_builder/getdeps.py fetch fmt
+	cd third-party/folly && \
+		GETDEPS_USE_WGET=1 $(PYTHON) build/fbcode_builder/getdeps.py fetch boost --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp} && \
+		GETDEPS_USE_WGET=1 $(PYTHON) build/fbcode_builder/getdeps.py fetch fmt   --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp}
 	@# Update cache with any new downloads
 	@cd third-party/folly && \
 		DOWNLOAD_DIR=`$(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir | sed 's|/installed/.*|/downloads|'` && \
-		CACHE_DIR="/tmp/rocksdb-getdeps-cache" && \
+		CACHE_DIR="$${GETDEPS_SCRATCH_PATH:-/tmp}/rocksdb-getdeps-cache" && \
+		mkdir -p "$$CACHE_DIR" && \
 		if ls "$$DOWNLOAD_DIR"/*.tar.gz "$$DOWNLOAD_DIR"/*.tar.xz "$$DOWNLOAD_DIR"/*.zip >/dev/null 2>&1; then \
 			cp -n "$$DOWNLOAD_DIR"/*.tar.gz "$$DOWNLOAD_DIR"/*.tar.xz "$$DOWNLOAD_DIR"/*.zip "$$CACHE_DIR/" 2>/dev/null || true; \
 		fi
@@ -147,8 +151,20 @@ ifneq ($(DEBUG_LEVEL),0)
 FOLLY_BUILD_FLAGS += --build-type Debug
 endif
 
+# Only propagate "target selection" flags to Folly (safe across platforms)
+ifeq ($(ARMCRC_SOURCE),1)
+  ARCH_CFLAGS   := $(filter -march=% -mcpu=% -mtune=%,$(CFLAGS))
+  ARCH_CXXFLAGS := $(filter -march=% -mcpu=% -mtune=%,$(CXXFLAGS))
+else
+  ARCH_CFLAGS   :=
+  ARCH_CXXFLAGS :=
+endif
+
+FOLLY_CFLAGS   := -fPIC $(ARCH_CFLAGS)
+FOLLY_CXXFLAGS := -fPIC -DHAVE_CXX11_ATOMIC $(ARCH_CXXFLAGS)
+
 build_folly:
-	FOLLY_INST_PATH=`cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir`; \
+	FOLLY_INST_PATH=`cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp}`; \
 	if [ "$$FOLLY_INST_PATH" ]; then \
 		rm -rf $${FOLLY_INST_PATH}/../../*; \
 	else \
@@ -156,10 +172,17 @@ build_folly:
 		false; \
 	fi
 	cd third-party/folly && \
-		CXXFLAGS=" $(CXX_M_FLAGS) -DHAVE_CXX11_ATOMIC " GETDEPS_USE_WGET=1 $(PYTHON) build/fbcode_builder/getdeps.py build $(FOLLY_BUILD_FLAGS)
+	GETDEPS_USE_WGET=1 \
+	CFLAGS="$(FOLLY_CFLAGS)" \
+	CXXFLAGS="$(CXX_M_FLAGS) $(FOLLY_CXXFLAGS)" \
+	$(PYTHON) build/fbcode_builder/getdeps.py build \
+		--scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp} \
+		--allow-system-packages \
+		--no-tests \
+		--extra-cmake-defines "{\"BUILD_SHARED_LIBS\":\"OFF\",\"CMAKE_C_FLAGS\":\"$(FOLLY_CFLAGS)\",\"CMAKE_CXX_FLAGS\":\"$(CXX_M_FLAGS) $(FOLLY_CXXFLAGS)\",\"CMAKE_POSITION_INDEPENDENT_CODE\":\"ON\",\"OPENSSL_INCLUDE_DIR\":\"/opt/openssl11/include\",\"OPENSSL_CRYPTO_LIBRARY\":\"/opt/openssl11/lib/libcrypto.a\",\"OPENSSL_SSL_LIBRARY\":\"/opt/openssl11/lib/libssl.a\",\"OPENSSL_ROOT_DIR\":\"/opt/openssl11\",\"OPENSSL_USE_STATIC_LIBS\":\"TRUE\",\"FOLLY_USE_JEMALLOC\":\"OFF\",\"FOLLY_HAVE_JEMALLOC\":\"OFF\",\"JEMALLOC_FOUND\":\"OFF\",\"FOLLY_USE_SYMBOLIZER\":\"OFF\",\"FOLLY_HAVE_LIBUNWIND\":\"OFF\",\"FOLLY_HAVE_DWARF\":\"OFF\",\"FOLLY_HAVE_ELF\":\"OFF\",\"CMAKE_DISABLE_FIND_PACKAGE_LibUnwind\":\"ON\",\"WITH_UNWIND\":\"OFF\",\"WITH_SYMBOLIZE\":\"OFF\"}"
 	@# In the folly build, glog and gflags are only built as dynamic libraries,
 	@# not static. This patchelf command is needed to reliably have the glog
 	@# library find its dependency gflags, because apparently the rpath of the
 	@# final binary is not used in resolving that transitive dependency.
-	FOLLY_INST_PATH=`cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir`; \
+	FOLLY_INST_PATH=`cd third-party/folly && $(PYTHON) build/fbcode_builder/getdeps.py show-inst-dir  --scratch-path $${GETDEPS_SCRATCH_PATH:-/tmp}`; \
 	cd "$$FOLLY_INST_PATH" && patchelf --add-rpath $$PWD/../gflags-*/lib ../glog-*/lib*/libglog*.so.*.*.*
