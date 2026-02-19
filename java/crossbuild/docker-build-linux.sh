@@ -57,6 +57,7 @@ echo "Using FOLLY_PATH=$FOLLY_PATH"
 BUILD_VARS=(
   "GETDEPS_SCRATCH_PATH=$GETDEPS_SCRATCH_PATH"
   "FOLLY_PATH=$FOLLY_PATH"
+  "LIB_MODE=static"
   "DISABLE_JEMALLOC=1"
   "USE_RTTI=1"
   "DISABLE_WARNING_AS_ERROR=1"
@@ -71,7 +72,7 @@ if have_folly "$FOLLY_PATH"; then
   echo "Reusing prebuilt folly at $FOLLY_PATH"
 else
   run "make checkout_folly"
-  run "${BUILD_VARS[*]} make build_folly"
+  run "GETDEPS_SCRATCH_PATH=$GETDEPS_SCRATCH_PATH make build_folly"
 
   FOLLY_PATH="$(get_folly_path)"
   export FOLLY_PATH

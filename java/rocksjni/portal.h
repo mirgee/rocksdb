@@ -51,11 +51,6 @@
 #undef DELETE
 #endif
 
-// Undefine macro from snappy
-#ifdef LOG
-#undef LOG
-#endif
-
 namespace ROCKSDB_NAMESPACE {
 
 class JavaClass {
@@ -4308,7 +4303,10 @@ class WriteTypeJni : public JavaClass {
    * @return A reference to the enum field value or a nullptr if
    *     the enum field value could not be retrieved
    */
+#pragma push_macro("LOG")
+#undef LOG
   static jobject LOG(JNIEnv* env) { return getEnum(env, "LOG"); }
+#pragma pop_macro("LOG")
 
   // Returns the equivalent org.rocksdb.WBWIRocksIterator.WriteType for the
   // provided C++ ROCKSDB_NAMESPACE::WriteType enum

@@ -10,4 +10,4 @@ for a in "$@"; do
 done
 
 # Force policy at the end (last flag wins)
-exec /opt/rh/devtoolset-12/root/usr/bin/g++ "${args[@]}" -frtti -fexceptions
+exec "${REAL_CXX:-g++}" "${args[@]}" -frtti -fexceptions

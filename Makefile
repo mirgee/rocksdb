@@ -99,7 +99,6 @@ dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; \
                   export COMPILE_WITH_UBSAN="$(COMPILE_WITH_UBSAN)"; \
                   export PORTABLE="$(PORTABLE)"; \
                   export ROCKSDB_NO_FBCODE="$(ROCKSDB_NO_FBCODE)"; \
-                  export ROCKSDB_USE_IO_URING="$(ROCKSDB_USE_IO_URING)"; \
                   export USE_CLANG="$(USE_CLANG)"; \
                   export LIB_MODE="$(LIB_MODE)"; \
 		  export ROCKSDB_CXX_STANDARD="$(ROCKSDB_CXX_STANDARD)"; \
@@ -146,8 +145,7 @@ endif
 
 GIT_COMMAND ?= git
 ifeq ($(USE_COROUTINES), 1)
-	# export as used in build_detect_platform
-	export USE_FOLLY = 1
+	USE_FOLLY = 1
 	# glog/logging.h requires HAVE_CXX11_ATOMIC
 	OPT += -DUSE_COROUTINES -DHAVE_CXX11_ATOMIC
 	USE_RTTI = 1
@@ -2093,7 +2091,7 @@ SHA256_CMD = sha256sum
 
 ZLIB_VER ?= 1.3.1
 ZLIB_SHA256 ?= 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
-ZLIB_DOWNLOAD_BASE ?= http://zlib.net
+ZLIB_DOWNLOAD_BASE ?= http://zlib.net/fossils
 BZIP2_VER ?= 1.0.8
 BZIP2_SHA256 ?= ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269
 BZIP2_DOWNLOAD_BASE ?= http://sourceware.org/pub/bzip2
@@ -2193,24 +2191,10 @@ snappy-$(SNAPPY_VER).tar.gz:
 
 libsnappy.a: snappy-$(SNAPPY_VER).tar.gz
 	-rm -rf snappy-$(SNAPPY_VER)
-	tar xzf $<
-	-rm -rf snappy-$(SNAPPY_VER)/build
-	mkdir -p snappy-$(SNAPPY_VER)/build
-	cd snappy-$(SNAPPY_VER)/build && \
-	  CC='$(CC)' \
-	  CXX='$(CURDIR)/cxx-rtti-wrap.sh' \
-	  CFLAGS='$(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' \
-	  CXXFLAGS='$(ARCHFLAG) ${JAVA_STATIC_DEPS_CXXFLAGS} ${EXTRA_CXXFLAGS}' \
-	  cmake \
-	    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-	    -DSNAPPY_BUILD_BENCHMARKS=OFF \
-	    -DSNAPPY_BUILD_TESTS=OFF \
-	    -DCMAKE_C_FLAGS="$$CFLAGS" \
-	    -DCMAKE_CXX_FLAGS="$$CXXFLAGS" \
-	    ${PLATFORM_CMAKE_FLAGS} .. && \
-	  $(MAKE) ${SNAPPY_MAKE_TARGET}
-	cp snappy-$(SNAPPY_VER)/build/libsnappy.a $@
-
+	tar xvzf snappy-$(SNAPPY_VER).tar.gz
+	mkdir snappy-$(SNAPPY_VER)/build
+	cd snappy-$(SNAPPY_VER)/build && CFLAGS='$(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' CXXFLAGS='$(ARCHFLAG) ${JAVA_STATIC_DEPS_CXXFLAGS} ${EXTRA_CXXFLAGS}' REAL_CXX='$(CXX)' CXX='$(CURDIR)/cxx-rtti-wrap.sh' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DSNAPPY_BUILD_BENCHMARKS=OFF -DSNAPPY_BUILD_TESTS=OFF ${PLATFORM_CMAKE_FLAGS} .. && $(MAKE) ${SNAPPY_MAKE_TARGET}
+	cp snappy-$(SNAPPY_VER)/build/libsnappy.a .
 
 lz4-$(LZ4_VER).tar.gz:
 	curl --fail --output lz4-$(LZ4_VER).tar.gz --location ${CURL_SSL_OPTS} ${LZ4_DOWNLOAD_BASE}/v$(LZ4_VER).tar.gz
@@ -2324,18 +2308,17 @@ rocksdbjavastatic_deps: $(JAVA_COMPRESSIONS)
 
 rocksdbjavastatic_libobjects: $(LIB_OBJECTS)
 
-rocksdbjavastaticrelease: rocksdbjava_javadocs_jar rocksdbjava_sources_jar
+rocksdbjavastaticrelease: rocksdbjavastaticosx rocksdbjava_javadocs_jar rocksdbjava_sources_jar
 	cd java/crossbuild && (vagrant destroy -f || true) && vagrant up linux32 && vagrant halt linux32 && vagrant up linux64 && vagrant halt linux64 && vagrant up linux64-musl && vagrant halt linux64-musl
 	cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR_ALL) HISTORY*.md
 	cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR_ALL) librocksdbjni-*.so librocksdbjni-*.jnilib
 	cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
 	openssl sha1 java/target/$(ROCKSDB_JAR_ALL) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR_ALL).sha1
 
-# rocksdbjavastaticreleasedocker: rocksdbjavastaticdockerx86_64 rocksdbjava_sources_jar
 rocksdbjavastaticreleasedocker: rocksdbjavastaticosx rocksdbjavastaticdockerx86 rocksdbjavastaticdockerx86_64 rocksdbjavastaticdockerx86musl rocksdbjavastaticdockerx86_64musl rocksdbjava_javadocs_jar rocksdbjava_sources_jar
 	cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR_ALL) HISTORY*.md
-	cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR_ALL) librocksdbjni-*.so
-	# cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
+	cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR_ALL) librocksdbjni-*.so librocksdbjni-*.jnilib
+	cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
 	openssl sha1 java/target/$(ROCKSDB_JAR_ALL) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR_ALL).sha1
 
 rocksdbjavastaticdockerx86:
@@ -2354,7 +2337,7 @@ rocksdbjavastaticdockerx86_64:
 	  --mount type=volume,src=rocksdb_getdeps_x86_64,dst=/getdeps-scratch \
 	  --env GETDEPS_SCRATCH_PATH=/getdeps-scratch \
 	  --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) \
-	  rocksjava-centos7-pydev \
+	  rocksjava-centos9-pydev \
 	  /rocksdb-host/java/crossbuild/docker-build-linux.sh
 
 rocksdbjavastaticdockerppc64le:
@@ -2365,16 +2348,16 @@ rocksdbjavastaticdockerarm64v8:
 	mkdir -p java/target
 	docker run --rm --name rocksdb_linux_arm64v8-be \
 		--platform linux/aarch64 \
-	  --attach stdin --attach stdout --attach stderr \
-	  --volume $(HOME)/.m2:/root/.m2:ro \
-	  --volume `pwd`:/rocksdb-host:ro \
+		--attach stdin --attach stdout --attach stderr \
+		--volume $(HOME)/.m2:/root/.m2:ro \
+		--volume `pwd`:/rocksdb-host:ro \
 		--volume rocksdb-local-build-arm64v8:/rocksdb-local-build \
-	  --volume `pwd`/java/target:/rocksdb-java-target \
-	  --mount type=volume,src=rocksdb_getdeps_arm64v8,dst=/getdeps-scratch \
-	  --env GETDEPS_SCRATCH_PATH=/getdeps-scratch \
-	  --env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) \
-	  rocksjava-centos7-pydev-arm64 \
-	  /rocksdb-host/java/crossbuild/docker-build-linux.sh
+		--volume `pwd`/java/target:/rocksdb-java-target \
+		--mount type=volume,src=rocksdb_getdeps_arm64v8,dst=/getdeps-scratch \
+		--env GETDEPS_SCRATCH_PATH=/getdeps-scratch \
+		--env DEBUG_LEVEL=$(DEBUG_LEVEL) --env J=$(J) \
+		rocksjava-centos9-pydev-arm64 \
+		/rocksdb-host/java/crossbuild/docker-build-linux.sh
 
 rocksdbjavastaticdockers390x:
 	mkdir -p java/target
@@ -2408,7 +2391,7 @@ rocksdbjavastaticpublish: rocksdbjavastaticrelease rocksdbjavastaticpublishcentr
 
 rocksdbjavastaticpublishdocker: rocksdbjavastaticreleasedocker rocksdbjavastaticpublishcentral
 
-ROCKSDB_JAVA_RELEASE_CLASSIFIERS = javadoc sources linux64 linux32 linux64-musl linux32-musl win64
+ROCKSDB_JAVA_RELEASE_CLASSIFIERS = javadoc sources linux64 linux32 linux64-musl linux32-musl osx win64
 
 rocksdbjavastaticpublishcentral: rocksdbjavageneratepom
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/pom.xml -Dfile=java/target/rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar
